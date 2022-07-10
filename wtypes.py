@@ -1,166 +1,236 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Mar 17 12:42:52 2022
-
-@author: User
+Refactoring of the script of Thiago Medeiros (thiagovmdon)
 """
-
-import glob, os
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import os
 import numpy
-import math
-import datetime
-plt.close("all")
-
-os.chdir(r'C:\Users\User\OneDrive\ERASMUS\4_Thesis\python\quality\water-types')
-print("Current Working Directory " , os.getcwd())
-
-comp = ["Na",	"K",	"Mg",	"Ca",	"NH4",	"Cl",	"HCO3",	"SO4",	"NO3",	"Fe2", "Mn2"]
-molarw = [22.989,	39.098,	24.305,	40.078,	18.039,	35.453,	61.016,	96.062,	62.004,	55.847,	54.931]
-molarnum = [1,	1,	2,	2,	1,	1,	1,	2,	1,	2,	2]
+from utils import convert_units, parameter_error, unit_error
 
 
-comptable = pd.DataFrame(index = comp)
-comptable["mw_mg_mmol"] = molarw
-comptable["mnum"] = molarnum
-
-path =r'C:\Users\User\OneDrive\ERASMUS\4_Thesis\python\quality\water-types\quality_data.xlsx'
-q_data=pd.read_excel(path)
-q_data.set_index('Sample', inplace=True)
-
-
-q_datammol_l = q_data
-
-for i in (range((q_data.shape[1]-1))):
-    q_datammol_l.iloc[:,i+1] = q_data.iloc[:,i+1]/comptable["mw_mg_mmol"].loc[q_data.columns[i+1]]
-
-q_datameq_l = q_data
-    
-for i in (range((q_data.shape[1]-1))):
-    q_datameq_l.iloc[:,i+1] = q_datammol_l.iloc[:,i+1]*comptable["mnum"].loc[q_data.columns[i+1]]
+comp = ["Na", "K", "Mg", "Ca", "NH4", "Cl", "HCO3", "CO3", "SO4", "NO3", 'NO2', "Fe", "Mn", 'Al']
+PARS = set(comp+['pH'])
 
 
 
-wtypes = pd.DataFrame(q_data["pH"])
-wtypes["MCation"] = "-999"
-wtypes["MAnion"] = "-999"
-wtypes["Salinity"] = "-999"
-wtypes["Alkalinity"] = "-999"
-wtypes["BEX"] = "-999"
- 
-for i in range(len(q_data)):
-    pH = q_datameq_l.iloc[i].loc["pH"]
-    Na = q_datameq_l.iloc[i].loc["Na"]
-    K = q_datameq_l.iloc[i].loc["K"]
-    Mg = q_datameq_l.iloc[i].loc["Mg"]
-    Ca = q_datameq_l.iloc[i].loc["Ca"]
-    NH4 = q_datameq_l.iloc[i].loc["NH4"]
-    Cl = q_datameq_l.iloc[i].loc["Cl"]
-    HCO3 = q_datameq_l.iloc[i].loc["HCO3"]
-    SO4 = q_datameq_l.iloc[i].loc["SO4"]
-    NO3 = q_datameq_l.iloc[i].loc["NO3"]
-    Fe = q_datameq_l.iloc[i].loc["Fe2"]
-    Mn2 = q_datameq_l.iloc[i].loc["Mn2"]
-    Al = 0
-    CO3 = 0
-    NO2 = 0
-    
+
+def water_type_classification(dataset: pd.pandas.core.frame.DataFrame, unit: str) -> pd.pandas.core.frame.DataFrame:
+    '''Function to calculate water type for samples organized in a DataFrame:
+
+    Inputs
+    ------------------
+    dataset[n x y]: dataframe with a sample in each row, and columns with results for ions used in the classification
+        Ions must be named as their chemical formula, without charge, examples: NO3,Fe,Mg,Ca,K,Cl
+    unit: concentration unit for the chemical results, either mg/L, mmol/L or meq/L are accepted
+
+    Returns
+    --------------------
+    pandas.DataFrame [n x 7] with columns:
+        'MCation': Major cátion Classification
+        'MAnion': Major anion classification
+        'Salinity': Salinity classification
+        'Alkalinity': Alkalinity Classification
+        'BEX': Base exchange (bex) Classification
+        'Code': Water-type code
+    '''
+    ### Checking for dataset consistency:
+    parameter_error(dataset, 'Water-Type Classification', parameters = PARS)
+    unit_error(unit)
+
+
+    ### Defining inner functions
+    """
+    Functions that calculate the water classification for:
+    Major cations: mcation, Major anions: manion, salinity: salinity, alkalinity: alkalinity, BEX: bex
+    """
     #Major cation:
-    if (Na + K) + NH4 > Ca + Mg + 10**(-pH)*1000 + Fe + Mn2:
-        if NH4 > (Na+K):
-            wtypes["MCation"].iloc[i] = "NH4"
-        elif Na > K:
-            wtypes["MCation"].iloc[i]  = "Na"
+    def mcation(Na,K,NH4,Ca,Mg,pH,Fe,Mn,Al):
+        if (Na + K) + NH4 > Ca + Mg + 10**(-pH)*1000 + Fe + Mn + Al:
+            if NH4 > (Na+K):
+                mcat_class = "NH4"
+            elif Na > K:
+                mcat_class  = "Na"
+            else:
+                mcat_class  = "K"
+        elif (Ca + Mg) > (10**(-pH)*1000 + Fe + Mn+Al):
+            if Ca > Mg:
+                mcat_class  = "Ca"
+            else:
+                mcat_class  = "Mg"
+        elif (10**(-pH)*1000+Al) > (Fe + Mn):
+            if Al > 10**(-pH)*1000:
+                mcat_class  = "Al"
+            else:
+                mcat_class  = "H"
         else:
-            wtypes["MCation"].iloc[i]  = "K"
-    elif (Ca + Mg) > (10**(-pH)*1000 + Fe + Mn2):
-        if Ca > Mg:
-            wtypes["MCation"].iloc[i]  = "Ca"
-        else:
-            wtypes["MCation"].iloc[i]  = "Mg"
-    elif 10**(-pH)*1000 > (Fe + Mn2): 
-        if Al > 10**(-pH)*1000:
-            wtypes["MCation"].iloc[i]  = "Al"
-        else:
-            wtypes["MCation"].iloc[i]  = "H"
-    else:
-        if Fe > Mn2:
-            wtypes["MCation"].iloc[i]  = "Fe2"
-        else:
-            wtypes["MCation"].iloc[i]  = "Mn2"
-    
-    # Major anion:         
-    if Cl > (HCO3+SO4+NO3+NO2+CO3):
-        wtypes["MAnion"].iloc[i] = "Cl"
-    else:
-        
-        if HCO3 + CO3 > (Cl + SO4 + NO3 + NO2):
-            
+            if Fe > Mn:
+                mcat_class  = "Fe"
+            else:
+                mcat_class  = "Mn"
+        return mcat_class
+
+
+    # Major anion:
+    def manion(HCO3,SO4,Cl,NO3,NO2,CO3):
+        anion_sum = np.sum([HCO3,SO4,Cl,NO3,NO2,CO3])
+        if Cl >= 0.5*anion_sum:
+            manion_class = "Cl"
+        elif (HCO3 + CO3) >= 0.5*anion_sum:
             if HCO3 > CO3:
-                wtypes["MAnion"].iloc[i] = "HCO3"
-                
+                manion_class = "HCO3"
             else:
-                
-                wtypes["MAnion"].iloc[i] = "CO3"
-        elif (SO4 + NO3 + NO2) > (HCO3 + CO3 + Cl):
-            
+                manion_class = "CO3"
+        elif (SO4 + NO3 + NO2) >= 0.5*anion_sum:
             if SO4 > (NO3 + NO2):
-                wtypes["MAnion"].iloc[i] = "SO4"
+                manion_class = "SO4"
             else:
-                wtypes["MAnion"].iloc[i] = "NO3"
+                manion_class = "NO3"
         else:
-            wtypes["MAnion"].iloc[i] = "MIX"
-         
-            
-        
-    # Salinity:
-    if Cl >= 564.127:
-        wtypes["Salinity"].iloc[i] = "H"
-    else:
-            
-        if 282.064 <= Cl < 564.127:
-            wtypes["Salinity"].iloc[i] = "s"
-        elif 28.206 <= Cl < 282.064:
-            wtypes["Salinity"].iloc[i] = "b"            
-        elif 8.462 <= Cl < 28.206:
-            wtypes["Salinity"].iloc[i] = "B"                   
-        elif 4.231 <= Cl < 8.462:
-            wtypes["Salinity"].iloc[i] = "f" 
-        elif 0.846 <= Cl < 4.231:
-            wtypes["Salinity"].iloc[i] = "F" 
-        elif 0.141 <= Cl < 0.846:
-            wtypes["Salinity"].iloc[i] = "g" 
+            manion_class = "MIX"
+        return manion_class
+
+
+
+    def salinity(Cl):
+        # Salinity:
+        if Cl >= 564.127:
+            salin = "H"
         else:
-            wtypes["Salinity"].iloc[i] = "G" 
-            
+            if 282.064 <= Cl < 564.127:
+                salin = "S"
+            elif 28.206 <= Cl < 282.064:
+                salin = "b"
+            elif 8.462 <= Cl < 28.206:
+                salin = "B"
+            elif 4.231 <= Cl < 8.462:
+                salin = "f"
+            elif 0.846 <= Cl < 4.231:
+                salin = "F"
+            elif 0.141 <= Cl < 0.846:
+                salin = "g"
+            else:
+                salin = "G"
+        return salin
+
     # Alkalinity:
-    if HCO3 < 0.5:
-        wtypes["Alkalinity"].iloc[i] = "*"
-    else:
-        if 0.5 < HCO3 <= 1:
-            wtypes["Alkalinity"].iloc[i] = "0"
-        elif Cl >= 512:
-            wtypes["Alkalinity"].iloc[i] = "9"            
+    def alkalinity(HCO3,CO3):
+        alk = HCO3 + CO3
+        if alk <= 0.5:
+            alk_class = "*"
+        elif alk <= 1.:
+            alk_class = '0'
+        elif alk <= 2.:
+            alk_class = '1'
+        elif alk <= 4.:
+            alk_class = '2'
+        elif alk <= 8.:
+            alk_class = '3'
+        elif alk <= 16.:
+            alk_class = '4'
+        elif alk <= 32.:
+            alk_class = '5'
+        elif alk <= 64.:
+            alk_class = '6'
         else:
-            wtypes["Alkalinity"].iloc[i] = str(int(np.log10(HCO3)/np.log10(2) + 1))
-   
+            alk_class = '7'
+        return alk_class
+
     # BEX:
-    if (Na + K + Mg) - 1.0716*Cl < -(0.5 + 0.02*Cl):
-        wtypes["BEX"].iloc[i] = "-"
-    else:
-        if (Na + K + Mg) - 1.0716*Cl > (0.5 + 0.02*Cl):
-            wtypes["BEX"].iloc[i] = "+"
+    def bex(Na,K,Mg,Cl):
+        if (Na + K + Mg) - 1.0716*Cl < -(0.5 + 0.02*Cl):
+            bx = "-"
         else:
-            wtypes["BEX"].iloc[i] = ""
+            if (Na + K + Mg) - 1.0716*Cl > (0.5 + 0.02*Cl):
+                bx = "+"
+            else:
+                bx = ""
+        return bx
 
-# Final code:
-wtypes["Code"] = wtypes["Salinity"] + wtypes["Alkalinity"] + wtypes["MCation"] + wtypes["MAnion"] + wtypes["BEX"]
+    #### Converting dataset:
+    meqL = convert_units(dataset, unit, parameters = comp)
 
-# Saving the table in xlsx:
-dataname="water_facies"
-path_output=r'C:\Users\User\OneDrive\ERASMUS\4_Thesis\python\quality\water-types'   
-wtypes.to_excel(path_output + '/'+str(dataname)+'.xlsx')
+
+    wtypes = pd.DataFrame(np.empty((meqL.shape[0],5)), columns = ['MCation','MAnion','Salinity','Alkalinity','BEX'])
+
+    pH = dataset["pH"]
+    Na = meqL["Na"]
+    K = meqL["K"]
+    Mg = meqL["Mg"]
+    Ca = meqL["Ca"]
+    NH4 = meqL["NH4"]
+    Cl = meqL["Cl"]
+    HCO3 = meqL["HCO3"]
+    SO4 = meqL["SO4"]
+    NO3 = meqL["NO3"]
+    Fe = meqL["Fe"]
+    Mn = meqL["Mn"]
+    Al = meqL["Al"]
+    CO3 = meqL["CO3"]
+    NO2 = meqL["NO2"]
+
+    mcation = np.vectorize(mcation)
+    wtypes['MCation'] = mcation(Na,K,NH4,Ca,Mg,pH,Fe,Mn,Al)
+    manion = np.vectorize(manion)
+    wtypes['MAnion'] = manion(HCO3,SO4,Cl,NO3,NO2,CO3)
+    salinity = np.vectorize(salinity)
+    wtypes['Salinity'] = salinity(Cl)
+    alkalinity = np.vectorize(alkalinity)
+    wtypes['Alkalinity'] = alkalinity(HCO3,CO3)
+    bex = np.vectorize(bex)
+    wtypes['BEX'] = bex(Na,K,Mg,Cl)
+
+    # Final code:
+    wtypes["Code"] = wtypes['Salinity'] + wtypes["Alkalinity"] +'-'+ wtypes["MCation"] + wtypes["MAnion"] + wtypes["BEX"]
+
+    return wtypes
+
+def pollution_index(dataset: pd.pandas.core.frame.DataFrame, unit: str, sub_indices = ['A','B']) -> pd.pandas.core.frame.DataFrame:
+
+    pars = []
+    ### Checking for dataset consistency:
+    if ('A' in sub_indices):
+        pars = pars + ['pH']
+    if ('B' in sub_indices):
+        pars = pars + ['NO3', 'SO4', 'Cl']
+
+    parameter_error(dataset, 'Pollution Classification', parameters = set(pars))
+    unit_error(unit)
+    if len(sub_indices) < 2:
+        raise ValueError('Minimum number of sub_indices is 2')
+
+    #### Converting dataset:
+    comp = ['NO3', 'SO4', 'Cl']
+    meqL = convert_units(dataset, unit, parameters = comp)
+
+
+    wtypes = pd.DataFrame(np.empty((meqL.shape[0],len(sub_indices))), columns = sub_indices)
+
+    pH = dataset["pH"]
+    Cl = meqL["Cl"]
+    SO4 = meqL["SO4"]
+    NO3 = meqL["NO3"]
+
+    #Calculation of A:
+    if ('A' in sub_indices):
+        A = 1.333*np.abs(pH-7)
+        wtypes['A'] = A
+
+    if ('B' in sub_indices):
+        SO4_c = 0.67*(SO4/2 - 0.0232*Cl)
+        SO4_c[SO4_c < 0] = 0
+        B = np.log(10*(NO3+SO4_c))/np.log(2)
+        B[B < 0] = 0
+        wtypes['B'] = B
+
+    # Calculating POLIN Index:
+    wtypes['POLIN'] = wtypes.sum(axis='columns')/(wtypes.shape[1]-wtypes.shape[1]/6)
+    return wtypes
+
+if __name__ == "__main__":
+
+    test = pd.read_csv('test_data.csv')
+    wtype = water_type_classification(test, unit='mmol/L')
+
+    print('Incompatible water type classes:')
+    print(wtype.loc[~(wtype['Code']==test['W-type'])],test.loc[~(wtype['Code']==test['W-type']),'W-type'])
