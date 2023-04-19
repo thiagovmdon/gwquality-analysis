@@ -102,3 +102,21 @@ def compounds_forclustering(filenames, compounds_used,
         i = i + 1
     
     return dataforcluster
+
+#%% # Build a table with the statistical descriptors per cluster:
+
+def descriptiontable_clusters(clusters, num_clusters, compounds_used):
+# This function is made for the example, if you use more than three compounds you would need to adjust it.
+
+    table = pd.DataFrame()
+    for cluster in(range(num_clusters)):
+        indexes = clusters["cluster"] == cluster
+        
+        for compound in compounds_used:
+            
+            rowname = compound + "_CL" + str(cluster)
+            
+            table.loc[:, rowname] = clusters.loc[indexes,compound].describe(percentiles=[.10, .25, .5, .75, .90, .95])
+
+    return table.T
+    
